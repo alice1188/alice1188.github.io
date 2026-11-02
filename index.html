@@ -164,6 +164,27 @@
   .addp:hover{opacity:1}
   @media (hover:none){.task-head .del{opacity:.5}}
 
+  /* 排序按钮 */
+  .move{
+    appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
+    width:22px;height:26px;border-radius:7px;font-size:12px;line-height:1;padding:0;
+    opacity:.42;transition:opacity .15s,background .15s,color .15s;flex:0 0 auto;
+  }
+  .move:hover{opacity:1;background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+  .move:disabled{opacity:.12;cursor:default;background:transparent}
+  @media (hover:none){.move{opacity:.55}}
+  /* 紧急标记 */
+  .urg{
+    appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;
+    width:22px;height:24px;border-radius:7px;font-size:13px;font-weight:800;padding:0;flex:0 0 auto;
+    opacity:.32;transition:all .15s;
+  }
+  .urg:hover{opacity:1;color:#ef4444;background:color-mix(in srgb,#ef4444 12%,transparent)}
+  .urg.on{opacity:1;color:#ef4444;background:color-mix(in srgb,#ef4444 13%,transparent)}
+  .point-text.urgent{color:#ef4444;font-weight:750}
+  .point-text.done.urgent{color:#ef4444;opacity:.5}
+  .point.urgent .cb{border-color:color-mix(in srgb,#ef4444 55%,transparent)}
+
   .points{padding:0 0 6px 41px;display:none}
   .points.open{display:block}
   .point{display:flex;align-items:center;gap:8px;padding:1px 0;border-radius:8px}
@@ -251,6 +272,12 @@
     transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .2s;
   }
   #toast.show{transform:translate(-50%,0);opacity:1}
+  #toast{display:flex;align-items:center;gap:12px;justify-content:center}
+  #toast .undo{
+    appearance:none;border:0;background:rgba(255,255,255,.2);color:#fff;font:inherit;
+    font-size:13px;font-weight:700;padding:5px 12px;border-radius:8px;cursor:pointer;flex:0 0 auto;
+  }
+  #toast .undo:hover{background:rgba(255,255,255,.32)}
 
   dialog{
     border:1px solid var(--line);border-radius:20px;background:var(--card);color:var(--text);
@@ -530,7 +557,11 @@
           title: String(t.title || ''),
           type: t.type === 'daily' ? 'daily' : 'once',
           created: t.created && /^\d{4}-\d{2}-\d{2}$/.test(t.created) ? t.created : todayStr(),
-          points: (t.points || []).filter(Boolean).map(p => ({ id: p.id || uid(), text: String(p.text || '') })),
+          points: (t.points || []).filter(Boolean).map(p => {
+            const pt = { id: p.id || uid(), text: String(p.text || '') };
+            if (p.urgent) pt.urgent = true;
+            return pt;
+          }),
           log: {}
         };
         if (isV2) {
@@ -662,7 +693,7 @@
     const pct = units ? Math.round(done / units * 100) : 0;
 
     const body = tasks.length
-      ? tasks.map(t => taskHTML(t, date)).join('')
+      ? tasks.map(t => taskHTML(t, date, sec)).join('')
       : '<div class="empty" style="padding:12px 0 6px">今天这个板块没有任务</div>';
 
     return `
@@ -671,6 +702,8 @@
           <span class="dot" style="background:${color}"></span>
           <input class="sec-name" value="${esc(sec.name)}" spellcheck="false" aria-label="板块名称">
           <span class="sec-count">${done}/${units}</span>
+          <button class="move" data-act="move" data-kind="section" data-dir="-1" ${idx === 0 ? 'disabled' : ''} title="上移板块" aria-label="上移板块">↑</button>
+          <button class="move" data-act="move" data-kind="section" data-dir="1" ${idx === state.sections.length - 1 ? 'disabled' : ''} title="下移板块" aria-label="下移板块">↓</button>
           <button class="icon-btn danger" data-act="del-section" title="删除板块" aria-label="删除板块">✕</button>
         </div>
         <div class="sec-bar"><i style="width:${pct}%;background:linear-gradient(90deg,${color},var(--accent2))"></i></div>
@@ -679,21 +712,27 @@
       </section>`;
   }
 
-  function taskHTML(t, date) {
+  function taskHTML(t, date, sec) {
     const done = isDoneOn(t, date);
     const pd = pointsDoneOn(t, date);
     const isDaily = t.type === 'daily';
     const st = isDaily ? streak(t) : 0;
     const hasPts = t.points.length > 0;
     const openPts = hasPts ? (t._open !== false) : !!t._open;
+    const ti = sec ? sec.tasks.indexOf(t) : 0;
+    const tCount = sec ? sec.tasks.length : 1;
 
-    const pointsHTML = t.points.map(p => {
+    const pointsHTML = t.points.map((p, pi) => {
       const e = entryOf(t, date);
       const pdone = !!(e && e.points && e.points[p.id]);
+      const urgent = !!p.urgent;
       return `
-      <div class="point" data-point="${p.id}">
+      <div class="point${urgent ? ' urgent' : ''}" data-point="${p.id}">
         <button class="cb${pdone ? ' done' : ''}" data-act="toggle-point" aria-pressed="${pdone}" aria-label="勾选小点"></button>
-        <input class="point-text${pdone ? ' done' : ''}" value="${esc(p.text)}" placeholder="小点…" spellcheck="false">
+        <input class="point-text${pdone ? ' done' : ''}${urgent ? ' urgent' : ''}" value="${esc(p.text)}" placeholder="小点…" spellcheck="false">
+        <button class="move" data-act="move" data-kind="point" data-dir="-1" ${pi === 0 ? 'disabled' : ''} title="上移小点" aria-label="上移小点">↑</button>
+        <button class="move" data-act="move" data-kind="point" data-dir="1" ${pi === t.points.length - 1 ? 'disabled' : ''} title="下移小点" aria-label="下移小点">↓</button>
+        <button class="urg${urgent ? ' on' : ''}" data-act="toggle-urgent" title="标记/取消紧急" aria-label="标记紧急" aria-pressed="${urgent}">!</button>
         <button class="icon-btn del" data-act="del-point" title="删除" aria-label="删除小点">✕</button>
       </div>`;
     }).join('');
@@ -710,6 +749,8 @@
           <button class="pill${isDaily ? ' daily' : ''}" data-act="toggle-type" title="点击切换 每日 / 一次性">${isDaily ? '每日' : '一次性'}</button>
           ${st > 1 ? `<span class="streak">🔥${st}</span>` : ''}
           <span class="meta">${hasPts ? pd + '/' + t.points.length : ''}</span>
+          <button class="move" data-act="move" data-kind="task" data-dir="-1" ${ti <= 0 ? 'disabled' : ''} title="上移任务" aria-label="上移任务">↑</button>
+          <button class="move" data-act="move" data-kind="task" data-dir="1" ${ti >= tCount - 1 ? 'disabled' : ''} title="下移任务" aria-label="下移任务">↓</button>
           ${foldBtn}
           <button class="icon-btn del" data-act="del-task" title="删除任务" aria-label="删除任务">✕</button>
         </div>
@@ -874,9 +915,44 @@
 
     if (act === 'toggle-task') {
       const t = taskOf(btn);
-      setDoneOn(t, todayStr(), !isDoneOn(t, todayStr()));
+      const date = todayStr();
+      const wasDone = isDoneOn(t, date);
+      setDoneOn(t, date, !wasDone);
       redrawTask(btn.closest('.task'));
       if (t.type === 'once') render();
+      if (!wasDone) {
+        toastUndo('已打卡：' + (t.title || '未命名'), () => {
+          setDoneOn(t, date, false);
+          render();
+          save();
+        });
+      }
+      return;
+    }
+
+    if (act === 'move') {
+      const kind = btn.dataset.kind;
+      const dir = Number(btn.dataset.dir);
+      let arr = null, item = null;
+      if (kind === 'section') { arr = state.sections; item = secOf(btn); }
+      else if (kind === 'task') { arr = secOf(btn).tasks; item = taskOf(btn); }
+      else if (kind === 'point') { arr = taskOf(btn).points; item = pointOf(btn); }
+      if (!arr || !item) return;
+      const i = arr.indexOf(item);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      arr[i] = arr[j];
+      arr[j] = item;
+      render();
+      save();
+      return;
+    }
+
+    if (act === 'toggle-urgent') {
+      const p = pointOf(btn);
+      p.urgent = !p.urgent;
+      render();
+      save();
       return;
     }
 
@@ -885,7 +961,8 @@
       const p = pointOf(btn);
       togglePointOn(t, todayStr(), p.id);
       const pointEl = btn.closest('.point');
-      const on = !!(entryOf(t, todayStr()) || {}).points[Object.keys((entryOf(t, todayStr()) || {}).points || {}).find(k => k === p.id)];
+      const entry = entryOf(t, todayStr());
+      const on = !!(entry && entry.points && entry.points[p.id]);
       pointEl.querySelector('.cb').classList.toggle('done', on);
       pointEl.querySelector('.cb').setAttribute('aria-pressed', on);
       pointEl.querySelector('.point-text').classList.toggle('done', on);
@@ -1153,6 +1230,26 @@
     el.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  function toastUndo(msg, onUndo) {
+    const el = document.getElementById('toast');
+    el.textContent = '';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    const btn = document.createElement('button');
+    btn.className = 'undo';
+    btn.textContent = '撤销';
+    btn.addEventListener('click', () => {
+      el.classList.remove('show');
+      clearTimeout(toastTimer);
+      try { onUndo(); } catch (e) {}
+    });
+    el.appendChild(span);
+    el.appendChild(btn);
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 4500);
   }
 
   /* ---------------- 顶栏阴影 ---------------- */
